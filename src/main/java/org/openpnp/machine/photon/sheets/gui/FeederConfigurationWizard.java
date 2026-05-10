@@ -27,6 +27,7 @@ import org.openpnp.gui.support.LengthConverter;
 import org.openpnp.gui.support.MutableLocationProxy;
 import org.openpnp.gui.support.PartsComboBoxModel;
 import org.openpnp.machine.photon.PhotonFeeder;
+import org.openpnp.machine.photon.calibration.PocketCalibrationPanel;
 import org.openpnp.model.Configuration;
 import org.openpnp.model.Part;
 import org.openpnp.util.UiUtils;
@@ -247,6 +248,8 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		moveWhileFeedingCheckBox = new JCheckBox();
 		locationPanel.add(moveWhileFeedingCheckBox, "4, 8, left, default"); //$NON-NLS-1$
 		moveWhileFeedingCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.moveWhileFeedingLabel.toolTipText"));
+
+		contentPanel.add(new PocketCalibrationPanel(feeder));
 	}
 
 	AutoBinding<PhotonFeeder, Object, SlotProxy, Object> binding;

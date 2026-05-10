@@ -39,6 +39,7 @@ import org.openpnp.spi.Nozzle;
 import org.openpnp.spi.PropertySheetHolder;
 import org.openpnp.util.MovableUtils;
 import org.pmw.tinylog.Logger;
+import org.openpnp.machine.photon.calibration.PocketCalibrator;
 import org.simpleframework.xml.Attribute;
 import org.simpleframework.xml.Element;
 
@@ -58,6 +59,9 @@ public class PhotonFeeder extends ReferenceFeeder {
 
     @Element(required = false)
     private Location offset;
+
+    @Element(required = false)
+    private PocketCalibrator pocketCalibrator;
 
     final private double correctionLimit = 5.0; // millimeters
     private Location pickCorrectionOffset = new Location(LengthUnit.Millimeters);
@@ -143,6 +147,16 @@ public class PhotonFeeder extends ReferenceFeeder {
 
     public Location getOffset() {
         return offset;
+    }
+
+    public PocketCalibrator getPocketCalibrator() {
+        return pocketCalibrator;
+    }
+
+    public void setPocketCalibrator(PocketCalibrator pocketCalibrator) {
+        PocketCalibrator oldValue = this.pocketCalibrator;
+        this.pocketCalibrator = pocketCalibrator;
+        firePropertyChange("pocketCalibrator", oldValue, pocketCalibrator);
     }
 
     public boolean getMoveWhileFeeding() {

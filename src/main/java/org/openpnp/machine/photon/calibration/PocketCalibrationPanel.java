@@ -9,15 +9,14 @@ import javax.swing.JPanel;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.border.TitledBorder;
-import javax.swing.BorderFactory;
 
 import org.openpnp.gui.MainFrame;
-import org.openpnp.gui.support.Icons;
 import org.openpnp.model.Configuration;
 import org.openpnp.machine.photon.PhotonFeeder;
 import org.openpnp.spi.Camera;
 import org.openpnp.spi.Machine;
 import org.openpnp.util.UiUtils;
+import org.openpnp.vision.pipeline.CvPipeline;
 import org.openpnp.vision.pipeline.ui.CvPipelineEditor;
 import org.openpnp.vision.pipeline.ui.CvPipelineEditorDialog;
 
@@ -135,23 +134,16 @@ public class PocketCalibrationPanel extends JPanel {
         @Override
         public void actionPerformed(ActionEvent e) {
             UiUtils.messageBoxOnException(() -> {
-                Machine machine = Configuration.get().getMachine();
-                Camera camera = machine.getDefaultHead().getDefaultCamera();
-                // Use a clone so user can cancel the edit
-                org.openpnp.vision.pipeline.CvPipeline pipeline =
-                        calibrator.getPipeline().clone();
-                pipeline.setProperty("camera", camera);
+                CvPipeline pipeline = calibrator.getPipeline();
+                pipeline.setProperty("camera",
+                        Configuration.get().getMachine().getDefaultHead().getDefaultCamera());
                 pipeline.setProperty("feeder", feeder);
-
                 CvPipelineEditor editor = new CvPipelineEditor(pipeline);
                 CvPipelineEditorDialog dialog = new CvPipelineEditorDialog(
                         MainFrame.get(),
                         feeder.getName() + " — Pocket Calibration Pipeline",
                         editor);
                 dialog.setVisible(true);
-
-                // On close, save the edited pipeline back
-                calibrator.setPipeline(pipeline);
             });
         }
     };

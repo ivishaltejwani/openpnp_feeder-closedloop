@@ -3,17 +3,13 @@ package org.openpnp.machine.photon.calibration;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-import java.util.concurrent.Callable;
 
 import org.openpnp.machine.photon.PhotonFeeder;
-import org.openpnp.model.Configuration;
 import org.openpnp.model.Length;
 import org.openpnp.model.LengthUnit;
 import org.openpnp.model.Location;
 import org.openpnp.spi.Camera;
-import org.openpnp.spi.Machine;
 import org.openpnp.util.MovableUtils;
-import org.openpnp.util.UiUtils;
 import org.openpnp.util.VisionUtils;
 import org.openpnp.vision.pipeline.CvPipeline;
 import org.openpnp.vision.pipeline.CvStage;
@@ -21,8 +17,6 @@ import org.opencv.core.KeyPoint;
 import org.opencv.core.Point;
 import org.simpleframework.xml.Element;
 import org.simpleframework.xml.Root;
-import org.simpleframework.xml.core.Commit;
-import org.simpleframework.xml.core.Persist;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,65 +91,62 @@ public class PocketCalibrator {
         camera.moveTo(target);
         Thread.sleep(300);
 
-        // Run the pipeline
-        try (CvPipeline p = pipeline) {
-            p.setProperty("camera", camera);
-            p.setProperty("feeder", feeder);
-            p.setProperty("MaskCircle.diameter",
-                    new Length(roiRadiusMm * 2.0, LengthUnit.Millimeters));
-            p.process();
+        // Run the pipeline (do NOT use try-with-resources — pipeline is a shared field
+        // and closing it would release native OpenCV resources for subsequent runs/edits)
+        pipeline.setProperty("camera", camera);
+        pipeline.setProperty("feeder", feeder);
+        pipeline.setProperty("MaskCircle.diameter",
+                new Length(roiRadiusMm * 2.0, LengthUnit.Millimeters));
+        pipeline.process();
 
-            // Pipeline expected to expose a "result" stage that produces a
-            // single point (the pocket center) — either as KeyPoint, Point,
-            // or RotatedRect center. Look for any of these.
-            Point pocketPixel = extractCenterFromPipeline(p);
-            if (pocketPixel == null) {
-                return new Result(false,
-                        "No pocket detected by pipeline. "
-                        + "Edit the pipeline to debug.",
-                        null, null, null, 0);
-            }
-
-            // Convert pixel offset to mm
-            org.openpnp.machine.reference.camera.AbstractSettlingCamera ascam = null;
-            // Use VisionUtils which handles units-per-pixel correctly
-            Location detectedMachineLoc = VisionUtils.getPixelLocation(
-                    camera, pocketPixel.x, pocketPixel.y);
-            detectedMachineLoc = detectedMachineLoc.convertToUnits(LengthUnit.Millimeters);
-
-            // Measured offset = where the pocket actually is, minus where we expected
-            Location measuredOffset = detectedMachineLoc.subtract(pickLocation);
-            measuredOffset = measuredOffset.derive(null, null, 0.0, 0.0); // X/Y only
-
-            double mag = Math.sqrt(measuredOffset.getX() * measuredOffset.getX()
-                                 + measuredOffset.getY() * measuredOffset.getY());
-
-            LOG.info("Detected pocket at pixel ({}, {}) -> machine {} -> offset {} (|{}|mm)",
-                    pocketPixel.x, pocketPixel.y, detectedMachineLoc,
-                    measuredOffset, mag);
-
-            if (mag > MAX_CORRECTION_MM) {
-                return new Result(false,
-                        String.format("Measured offset %.3fmm exceeds safety limit %.1fmm. "
-                                    + "Likely vision error.", mag, MAX_CORRECTION_MM),
-                        measuredOffset, null, pocketPixel, 0);
-            }
-
-            // New feeder offset = current + measured (additive, so re-running converges)
-            Location newFeederOffset = new Location(LengthUnit.Millimeters,
-                    currentOffset.getX() + measuredOffset.getX(),
-                    currentOffset.getY() + measuredOffset.getY(),
-                    currentOffset.getZ(),
-                    currentOffset.getRotation());
-
-            feeder.setOffset(newFeederOffset);
-            LOG.info("Wrote new feeder offset: {}", newFeederOffset);
-
-            return new Result(true,
-                    String.format("OK. Offset adjusted by dx=%+.3f dy=%+.3f mm.",
-                            measuredOffset.getX(), measuredOffset.getY()),
-                    measuredOffset, newFeederOffset, pocketPixel, 0);
+        // Pipeline expected to expose a "result" stage that produces a
+        // single point (the pocket center) — either as KeyPoint, Point,
+        // or RotatedRect center. Look for any of these.
+        Point pocketPixel = extractCenterFromPipeline(pipeline);
+        if (pocketPixel == null) {
+            return new Result(false,
+                    "No pocket detected by pipeline. "
+                    + "Edit the pipeline to debug.",
+                    null, null, null, 0);
         }
+
+        // Use VisionUtils which handles units-per-pixel correctly
+        Location detectedMachineLoc = VisionUtils.getPixelLocation(
+                camera, pocketPixel.x, pocketPixel.y);
+        detectedMachineLoc = detectedMachineLoc.convertToUnits(LengthUnit.Millimeters);
+
+        // Measured offset = where the pocket actually is, minus where we expected
+        Location measuredOffset = detectedMachineLoc.subtract(pickLocation);
+        measuredOffset = measuredOffset.derive(null, null, 0.0, 0.0); // X/Y only
+
+        double mag = Math.sqrt(measuredOffset.getX() * measuredOffset.getX()
+                             + measuredOffset.getY() * measuredOffset.getY());
+
+        LOG.info("Detected pocket at pixel ({}, {}) -> machine {} -> offset {} (|{}|mm)",
+                pocketPixel.x, pocketPixel.y, detectedMachineLoc,
+                measuredOffset, mag);
+
+        if (mag > MAX_CORRECTION_MM) {
+            return new Result(false,
+                    String.format("Measured offset %.3fmm exceeds safety limit %.1fmm. "
+                                + "Likely vision error.", mag, MAX_CORRECTION_MM),
+                    measuredOffset, null, pocketPixel, 0);
+        }
+
+        // New feeder offset = current + measured (additive, so re-running converges)
+        Location newFeederOffset = new Location(LengthUnit.Millimeters,
+                currentOffset.getX() + measuredOffset.getX(),
+                currentOffset.getY() + measuredOffset.getY(),
+                currentOffset.getZ(),
+                currentOffset.getRotation());
+
+        feeder.setOffset(newFeederOffset);
+        LOG.info("Wrote new feeder offset: {}", newFeederOffset);
+
+        return new Result(true,
+                String.format("OK. Offset adjusted by dx=%+.3f dy=%+.3f mm.",
+                        measuredOffset.getX(), measuredOffset.getY()),
+                measuredOffset, newFeederOffset, pocketPixel, 0);
     }
 
     /**

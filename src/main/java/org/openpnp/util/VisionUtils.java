@@ -284,9 +284,10 @@ public class VisionUtils {
             if (f != null && offsets != null) {
                 Location realError = offsets.getLocation();
                 if (offsets.getPreRotated()) {
-                    realError = realError.rotateXy(
-                        -Utils2D.calculateBoardPlacementLocation(boardLocation, placement.getLocation()).getRotation()
-                    );
+                    double rotation = boardLocation != null
+                            ? Utils2D.calculateBoardPlacementLocation(boardLocation, placement.getLocation()).getRotation()
+                            : placement.getLocation().getRotation();
+                    realError = realError.rotateXy(-rotation);
                 }
                 f.bottomVisionResultCallback(realError);
             }

@@ -5,18 +5,31 @@ import org.openpnp.model.AbstractModelObject;
 import org.openpnp.model.LengthUnit;
 import org.openpnp.model.Location;
 
+import java.beans.PropertyChangeListener;
 import java.util.Locale;
 
 public class SlotProxy extends AbstractModelObject {
     private Slot slot;
 
+    // Forward slot's own "location" events so the UI binding updates
+    // without needing to call setSlot() again.
+    private final PropertyChangeListener slotLocationListener = evt ->
+            firePropertyChange("location", evt.getOldValue(), evt.getNewValue());
+
     public void setSlot(Slot slot) {
+        if (this.slot != null) {
+            this.slot.removePropertyChangeListener("location", slotLocationListener);
+        }
         Slot oldSlot = this.slot;
         boolean oldIsEnabled = isEnabled();
         String oldSlotAddress = getSlotAddress();
         Location oldLocation = getLocation();
 
         this.slot = slot;
+
+        if (this.slot != null) {
+            this.slot.addPropertyChangeListener("location", slotLocationListener);
+        }
 
         firePropertyChange("slot", oldSlot, slot);
         firePropertyChange("enabled", oldIsEnabled, isEnabled());

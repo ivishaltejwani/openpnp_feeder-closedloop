@@ -1,36 +1,12 @@
 <cv-pipeline>
-  <stages>
-    <!-- Capture from the camera (the calibrator sets 'camera' property before running) -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.ImageCapture" name="Capture" enabled="true" default-light="true" settle-first="true" count="1"/>
-
-    <!-- Light blur to reduce sensor noise -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.BlurGaussian" name="Blur" enabled="true" kernel-size="5"/>
-
-    <!-- Mask to a circular ROI around image center.
-         Diameter is overridden at runtime by PocketCalibrator (roiRadiusMm * 2). -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.MaskCircle" name="MaskROI" enabled="true" diameter="200"/>
-
-    <!-- Convert to grayscale for thresholding -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.ConvertColor" name="Gray" enabled="true" conversion="Bgr2Gray"/>
-
-    <!-- Otsu inverted: pocket (dark) becomes white blob -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.Threshold" name="Threshold" enabled="true" auto="true" invert="true" threshold="0"/>
-
-    <!-- Morphological close to fill small gaps -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.ImageWriteDebug" name="Debug-Threshold" enabled="false" prefix="pocket-thr-" suffix=".png"/>
-
-    <!-- Find external contours -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.FindContours" name="Contours" enabled="true" retrieval-mode="External" approximation-method="Simple"/>
-
-    <!-- Filter by area (in pixels). Tune these to match pocket size at your camera resolution.
-         For 0603 pocket (~1.1mm) at typical top-cam UPP of ~0.013-0.04 mm/px,
-         expect ~700-7000 px^2. Defaults are wide. -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.FilterContours" name="FilterContours" enabled="true" min-area="200.0" max-area="50000.0"/>
-
-    <!-- Pick the contour closest to image center, returns RotatedRect -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.MinAreaRectContours" name="PocketRect" enabled="true"/>
-
-    <!-- Draw result on the image for debugging in the pipeline editor -->
-    <cv-stage class="org.openpnp.vision.pipeline.stages.DrawRotatedRects" name="Draw" enabled="true" rotated-rects-stage-name="PocketRect" thickness="2" draw-rect-center="true" rect-center-radius="6"/>
-  </stages>
+   <stages>
+      <cv-stage class="org.openpnp.vision.pipeline.stages.ImageCapture" name="original" enabled="true" default-light="true" settle-option="Settle" count="1"/>
+      <cv-stage class="org.openpnp.vision.pipeline.stages.ConvertColor" name="gray" enabled="true" conversion="Bgr2Gray"/>
+      <cv-stage class="org.openpnp.vision.pipeline.stages.BlurGaussian" name="predetect-1" enabled="true" kernel-size="5" property-name="BlurGaussian"/>
+      <cv-stage class="org.openpnp.vision.pipeline.stages.DetectFixedCirclesHough" name="results" enabled="true" dp="1.0" param-1="25.0" param-2="20.0"/>
+      <cv-stage class="org.openpnp.vision.pipeline.stages.ImageRecall" name="recalled" enabled="true" image-stage-name="original"/>
+      <cv-stage class="org.openpnp.vision.pipeline.stages.DrawCircles" name="display" enabled="true" circles-stage-name="results" thickness="1">
+         <color r="255" g="0" b="0" a="255"/>
+      </cv-stage>
+   </stages>
 </cv-pipeline>

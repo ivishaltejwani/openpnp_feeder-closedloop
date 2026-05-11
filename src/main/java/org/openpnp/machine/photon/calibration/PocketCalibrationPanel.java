@@ -3,6 +3,8 @@ package org.openpnp.machine.photon.calibration;
 import java.awt.event.ActionEvent;
 import javax.swing.AbstractAction;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -26,20 +28,12 @@ import com.jgoodies.forms.layout.FormSpecs;
 import com.jgoodies.forms.layout.RowSpec;
 
 /**
- * UI panel for pocket calibration controls. Add this panel to
- * PhotonFeederConfigurationWizard's createUI() method.
- *
- * Provides:
- *   - "Calibrate Pocket" button: runs PocketCalibrator on the feeder
- *   - "Edit Pipeline" button: opens OpenPnP's CvPipeline editor
- *   - "Reset Pipeline" button: restores the default pipeline
- *   - ROI radius spinner: adjusts the search radius
+ * UI panel for pocket calibration controls.
  */
 public class PocketCalibrationPanel extends JPanel {
 
     private final PhotonFeeder feeder;
     private PocketCalibrator calibrator;
-    private final JSpinner roiSpinner;
 
     public PocketCalibrationPanel(PhotonFeeder feeder) {
         this.feeder = feeder;
@@ -48,6 +42,7 @@ public class PocketCalibrationPanel extends JPanel {
         setBorder(new TitledBorder(null, "Pocket Calibration",
                 TitledBorder.LEADING, TitledBorder.TOP, null, null));
 
+        // 9-column layout: gap, grow, gap, def, gap, def, gap, def, gap
         setLayout(new FormLayout(new ColumnSpec[]{
                 FormSpecs.RELATED_GAP_COLSPEC,
                 ColumnSpec.decode("default:grow"),
@@ -63,37 +58,84 @@ public class PocketCalibrationPanel extends JPanel {
                 FormSpecs.DEFAULT_ROWSPEC,
                 FormSpecs.RELATED_GAP_ROWSPEC,
                 FormSpecs.DEFAULT_ROWSPEC,
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
                 FormSpecs.RELATED_GAP_ROWSPEC,}));
 
-        // Row 1: ROI controls + Edit Pipeline + Reset
-        JLabel roiLabel = new JLabel("ROI radius (mm):");
-        add(roiLabel, "2, 2, right, default");
+        // Computed offset label declared early so tape width listener can update it.
+        JLabel perpOffsetLabel = new JLabel("Computed pocket offset: "
+                + String.format("%.1f", calibrator.computePerpOffsetMm()) + " mm");
 
-        roiSpinner = new JSpinner(new SpinnerNumberModel(
+        // Row 1: Tape width
+        add(new JLabel("Tape width:"), "2, 2, right, default");
+        JComboBox<String> tapeWidthCombo = new JComboBox<>(new String[]{"8 mm", "12 mm", "16 mm", "24 mm"});
+        tapeWidthCombo.setSelectedItem((int) calibrator.getTapeWidthMm() + " mm");
+        tapeWidthCombo.addActionListener(e -> {
+            String sel = (String) tapeWidthCombo.getSelectedItem();
+            calibrator.setTapeWidthMm(Double.parseDouble(sel.replace(" mm", "").trim()));
+            perpOffsetLabel.setText("Computed pocket offset: "
+                    + String.format("%.1f", calibrator.computePerpOffsetMm()) + " mm");
+        });
+        add(tapeWidthCombo, "4, 2");
+
+        // Row 2: Part pitch
+        add(new JLabel("Part pitch:"), "2, 4, right, default");
+        JComboBox<String> partPitchCombo = new JComboBox<>(new String[]{"2 mm", "4 mm", "8 mm", "12 mm"});
+        partPitchCombo.setSelectedItem((int) calibrator.getPartPitchMm() + " mm");
+        partPitchCombo.addActionListener(e -> {
+            String sel = (String) partPitchCombo.getSelectedItem();
+            calibrator.setPartPitchMm(Double.parseDouble(sel.replace(" mm", "").trim()));
+        });
+        add(partPitchCombo, "4, 4");
+
+        // Row 3: Computed pocket offset (read-only, updates when tape width changes)
+        add(perpOffsetLabel, "2, 6, 7, 1");
+
+        // Row 4: ROI radius + Along offset
+        add(new JLabel("ROI radius (mm):"), "2, 8, right, default");
+        JSpinner roiSpinner = new JSpinner(new SpinnerNumberModel(
                 calibrator.getRoiRadiusMm(), 0.5, 20.0, 0.5));
-        roiSpinner.addChangeListener(e ->
-                calibrator.setRoiRadiusMm((Double) roiSpinner.getValue()));
-        add(roiSpinner, "4, 2");
+        roiSpinner.addChangeListener(e -> calibrator.setRoiRadiusMm((Double) roiSpinner.getValue()));
+        add(roiSpinner, "4, 8");
 
-        JButton editPipelineBtn = new JButton(editPipelineAction);
-        add(editPipelineBtn, "6, 2");
+        add(new JLabel("Along offset (mm):"), "6, 8, right, default");
+        JSpinner alongSpinner = new JSpinner(new SpinnerNumberModel(
+                calibrator.getAlongOffsetMm(), -5.0, 5.0, 0.5));
+        alongSpinner.addChangeListener(e -> calibrator.setAlongOffsetMm((Double) alongSpinner.getValue()));
+        add(alongSpinner, "8, 8");
 
-        JButton resetBtn = new JButton(resetPipelineAction);
-        add(resetBtn, "8, 2");
+        // Row 5: Align tolerance + Feed before calibrate
+        add(new JLabel("Align tolerance (px):"), "2, 10, right, default");
+        JSpinner alignSpinner = new JSpinner(new SpinnerNumberModel(
+                calibrator.getAlignmentTolerancePx(), 5.0, 500.0, 5.0));
+        alignSpinner.addChangeListener(e -> calibrator.setAlignmentTolerancePx((Double) alignSpinner.getValue()));
+        add(alignSpinner, "4, 10");
 
-        // Row 2: Big Calibrate button (full width)
+        add(new JLabel("Feed before calibrate:"), "6, 10, right, default");
+        JCheckBox feedCheckBox = new JCheckBox();
+        feedCheckBox.setSelected(calibrator.isFeedBeforeCalibrate());
+        feedCheckBox.addActionListener(e -> calibrator.setFeedBeforeCalibrate(feedCheckBox.isSelected()));
+        add(feedCheckBox, "8, 10");
+
+        // Row 6: Edit Pipeline + Reset Pipeline
+        add(new JButton(editPipelineAction), "6, 12");
+        add(new JButton(resetPipelineAction), "8, 12");
+
+        // Row 7: Calibrate Pocket Now (full width)
         JButton calibrateBtn = new JButton(calibrateAction);
         calibrateBtn.setText("Calibrate Pocket Now");
-        add(calibrateBtn, "2, 4, 7, 1, fill, fill");
+        add(calibrateBtn, "2, 14, 7, 1, fill, fill");
     }
 
-    /**
-     * Look up an existing calibrator on the feeder, or create one.
-     * Persists by being stored on the feeder via setPocketCalibrator().
-     */
     private PocketCalibrator getOrCreateCalibrator(PhotonFeeder feeder) {
-        // PhotonFeeder must be modified to add getPocketCalibrator/setPocketCalibrator
-        // and serialize it as a child element.
         PocketCalibrator c = feeder.getPocketCalibrator();
         if (c == null) {
             c = new PocketCalibrator();
@@ -109,7 +151,6 @@ public class PocketCalibrationPanel extends JPanel {
                 Machine machine = Configuration.get().getMachine();
                 Camera camera = machine.getDefaultHead().getDefaultCamera();
                 PocketCalibrator.Result result = calibrator.calibrate(feeder, camera);
-                // Show result on EDT
                 javax.swing.SwingUtilities.invokeLater(() -> {
                     if (result.success) {
                         JOptionPane.showMessageDialog(
@@ -135,9 +176,33 @@ public class PocketCalibrationPanel extends JPanel {
         public void actionPerformed(ActionEvent e) {
             UiUtils.messageBoxOnException(() -> {
                 CvPipeline pipeline = calibrator.getPipeline();
-                pipeline.setProperty("camera",
-                        Configuration.get().getMachine().getDefaultHead().getDefaultCamera());
+                org.openpnp.spi.Camera camera =
+                        Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+                pipeline.setProperty("camera", camera);
                 pipeline.setProperty("feeder", feeder);
+                pipeline.setProperty("sprocketHole.diameter",
+                        new org.openpnp.model.Length(
+                                calibrator.getSprocketHoleDiameterMm(),
+                                org.openpnp.model.LengthUnit.Millimeters));
+                pipeline.setProperty("sprocketHole.maxDistance",
+                        new org.openpnp.model.Length(
+                                4.0 * 0.6,
+                                org.openpnp.model.LengthUnit.Millimeters));
+                Integer pxMinDistance = (int) org.openpnp.util.VisionUtils.toPixels(
+                        new org.openpnp.model.Length(
+                                4.0 * 0.9,
+                                org.openpnp.model.LengthUnit.Millimeters), camera);
+                Integer pxMinDiameter = (int) org.openpnp.util.VisionUtils.toPixels(
+                        new org.openpnp.model.Length(
+                                calibrator.getSprocketHoleDiameterMm() * 0.9,
+                                org.openpnp.model.LengthUnit.Millimeters), camera);
+                Integer pxMaxDiameter = (int) org.openpnp.util.VisionUtils.toPixels(
+                        new org.openpnp.model.Length(
+                                calibrator.getSprocketHoleDiameterMm() * 1.1,
+                                org.openpnp.model.LengthUnit.Millimeters), camera);
+                pipeline.setProperty("DetectFixedCirclesHough.minDistance", pxMinDistance);
+                pipeline.setProperty("DetectFixedCirclesHough.minDiameter", pxMinDiameter);
+                pipeline.setProperty("DetectFixedCirclesHough.maxDiameter", pxMaxDiameter);
                 CvPipelineEditor editor = new CvPipelineEditor(pipeline);
                 CvPipelineEditorDialog dialog = new CvPipelineEditorDialog(
                         MainFrame.get(),

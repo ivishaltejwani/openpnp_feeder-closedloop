@@ -142,7 +142,7 @@ public class PhotonFeeder extends ReferenceFeeder {
         Object oldValue = this.offset;
         this.offset = offsets;
         pickCorrectionOffset = new Location(LengthUnit.Millimeters);
-        firePropertyChange("offsets", oldValue, offsets);
+        firePropertyChange("offset", oldValue, offsets);
     }
 
     public Location getOffset() {

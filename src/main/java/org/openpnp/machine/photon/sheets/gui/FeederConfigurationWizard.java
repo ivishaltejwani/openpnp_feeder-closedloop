@@ -57,6 +57,10 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 	private final LocationButtonsPanel offsetLocationPanel;
 	private final JLabel moveWhileFeedingLabel;
 	private final JCheckBox moveWhileFeedingCheckBox;
+	private final JLabel feedAfterPickLabel;
+	private final JCheckBox feedAfterPickCheckBox;
+	private final JLabel verifyPickBeforeFeedLabel;
+	private final JCheckBox verifyPickBeforeFeedCheckBox;
 	private final LocationButtonsPanel slotLocationPanel;
 
 	/**
@@ -183,6 +187,10 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 				FormSpecs.DEFAULT_ROWSPEC,
 				FormSpecs.RELATED_GAP_ROWSPEC,
 				FormSpecs.DEFAULT_ROWSPEC,
+				FormSpecs.RELATED_GAP_ROWSPEC,
+				FormSpecs.DEFAULT_ROWSPEC,
+				FormSpecs.RELATED_GAP_ROWSPEC,
+				FormSpecs.DEFAULT_ROWSPEC,
 				FormSpecs.RELATED_GAP_ROWSPEC,}));
 		
 		JLabel xOffsetLabel = new JLabel("X"); //$NON-NLS-1$
@@ -249,6 +257,22 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		locationPanel.add(moveWhileFeedingCheckBox, "4, 8, left, default"); //$NON-NLS-1$
 		moveWhileFeedingCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.moveWhileFeedingLabel.toolTipText"));
 
+		feedAfterPickLabel = new JLabel(Translations.getString("FeederConfigurationWizard.LocationPanel.feedAfterPickLabel.text"));
+		locationPanel.add(feedAfterPickLabel, "2, 10, right, default"); //$NON-NLS-1$
+		feedAfterPickLabel.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.feedAfterPickLabel.toolTipText"));
+
+		feedAfterPickCheckBox = new JCheckBox();
+		locationPanel.add(feedAfterPickCheckBox, "4, 10, left, default"); //$NON-NLS-1$
+		feedAfterPickCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.feedAfterPickLabel.toolTipText"));
+
+		verifyPickBeforeFeedLabel = new JLabel(Translations.getString("FeederConfigurationWizard.LocationPanel.verifyPickBeforeFeedLabel.text"));
+		locationPanel.add(verifyPickBeforeFeedLabel, "2, 12, right, default"); //$NON-NLS-1$
+		verifyPickBeforeFeedLabel.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.verifyPickBeforeFeedLabel.toolTipText"));
+
+		verifyPickBeforeFeedCheckBox = new JCheckBox();
+		locationPanel.add(verifyPickBeforeFeedCheckBox, "4, 12, left, default"); //$NON-NLS-1$
+		verifyPickBeforeFeedCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.verifyPickBeforeFeedLabel.toolTipText"));
+
 		contentPanel.add(new PocketCalibrationPanel(feeder));
 	}
 
@@ -314,6 +338,9 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		bind(AutoBinding.UpdateStrategy.READ_WRITE, offsets, "rotation", rotOffsetTf, "text", doubleConverter); //$NON-NLS-1$ //$NON-NLS-2$
 
 		addWrappedBinding(feeder, "moveWhileFeeding", moveWhileFeedingCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
+
+		addWrappedBinding(feeder, "feedAfterPick", feedAfterPickCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
+		addWrappedBinding(feeder, "verifyPickBeforeFeed", verifyPickBeforeFeedCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	private final Action findSlotAddressAction = new AbstractAction(Translations.getString("FeederConfigurationWizard.FindSlotAddressAction.Name")) { //$NON-NLS-1$

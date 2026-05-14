@@ -39,6 +39,18 @@ Summary of guidelines:
 * Include tests and documentation.
 * Think of the big picture.
 
+## Photon Feeder Performance Features
+
+This fork includes several throughput improvements for [Photon feeders](https://github.com/photonfirmware/photon):
+
+| Feature | How it works | Est. CPH gain |
+|---|---|---|
+| **Move While Feeding** | Nozzle travels to pick location while the tape is still advancing | 5–10 % |
+| **Feed After Pick** | Fires the next advance command immediately after pick; nozzle moves to alignment/place while the tape advances in the background | 5–15 % typical, up to 25–30 % for large-pitch parts |
+| **Per-feeder Pocket Calibration** | Top-camera vision corrects the pick offset per feeder, reducing pick failures | Fewer retries |
+
+Both feed-timing options are enabled by default and can be toggled per-feeder under the **Location** tab in the feeder configuration panel.
+
 ## Thanks
 
 Many thanks to ej-technologies for providing a complimentary license of install4j. install4j

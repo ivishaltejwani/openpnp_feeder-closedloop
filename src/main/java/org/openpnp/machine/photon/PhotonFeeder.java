@@ -72,6 +72,16 @@ public class PhotonFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected boolean moveWhileFeeding = true;
 
+    @Attribute(required = false)
+    protected boolean feedAfterPick = true;
+
+    @Attribute(required = false)
+    protected boolean verifyPickBeforeFeed = true;
+
+    private boolean postPickFeedPending = false;
+    private long postPickFeedDeadline = 0;
+    private Location postPickNudgeOffset = new Location(LengthUnit.Millimeters);
+
     public PhotonFeeder() {
         Configuration.get().addListener(new ConfigurationListener.Adapter() {
             @Override
@@ -165,6 +175,22 @@ public class PhotonFeeder extends ReferenceFeeder {
 
     public void setMoveWhileFeeding(boolean moveWhileFeeding) {
         this.moveWhileFeeding = moveWhileFeeding;
+    }
+
+    public boolean getFeedAfterPick() {
+        return feedAfterPick;
+    }
+
+    public void setFeedAfterPick(boolean feedAfterPick) {
+        this.feedAfterPick = feedAfterPick;
+    }
+
+    public boolean getVerifyPickBeforeFeed() {
+        return verifyPickBeforeFeed;
+    }
+
+    public void setVerifyPickBeforeFeed(boolean verifyPickBeforeFeed) {
+        this.verifyPickBeforeFeed = verifyPickBeforeFeed;
     }
 
     @Override
@@ -299,7 +325,9 @@ public class PhotonFeeder extends ReferenceFeeder {
         return actuator;
     }
 
-    private void feed(Nozzle nozzle, int distance_HundredMicrons) throws Exception {
+    // Sends the MoveFeedForward command and returns the deadline nanos for status polling.
+    // Has its own retry loop for initialization failures.
+    private long sendFeedCommand(int distance_HundredMicrons) throws Exception {
         for (int i = 0; i <= photonProperties.getFeederCommunicationMaxRetry(); i++) {
             findSlotAddressIfNeeded();
             initializeIfNeeded();
@@ -323,50 +351,48 @@ public class PhotonFeeder extends ReferenceFeeder {
                 continue;  // We'll initialize it on a retry
             }
 
-            // The feeder gives us expectedTimeToFeed, but it is way too conservative.
-            // Use expectedTimeToFeed to bound how long we will wait,
-            // but use polling to check the status of the feed.
             Duration expectedFeedDuration = Duration.ofMillis(moveFeedForwardResponse.expectedTimeToFeed);
-            long endTimeNanos = System.nanoTime() + expectedFeedDuration.toNanos() * 3;
-            for (int j = 0; j <= photonProperties.getFeederCommunicationMaxRetry() || System.nanoTime() <= endTimeNanos; j++) {
-                Thread.sleep(50); // MAGIC: this feels like a good number, there is no particular reason it is this way.
-
-                if (j == 0 && nozzle != null && Configuration.get().getMachine().isHomed() && getMoveWhileFeeding()) {
-                    MovableUtils.moveToLocationAtSafeZ(nozzle, getPickLocation().derive(null, null, Double.NaN, null));
-                }
-
-                MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
-                MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
-
-                if (moveFeedStatusResponse == null) {
-                    continue; // Timeout. retry after delay.
-                }
-
-                if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
-                    return;
-                } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
-                    throw new FeedFailureException("Feeder could not reach its destination.");
-                }
-            }
-
-            throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
+            return System.nanoTime() + expectedFeedDuration.toNanos() * 3;
         }
 
         throw new FeedFailureException("Failed to feed for an unknown reason. Is the feeder inserted?");
     }
 
-    @Override
-    public void feed(Nozzle nozzle) throws Exception {
-        switch (getFeedOptions()) {
-        case Normal:
-            break;
-        case SkipNext:
-            setFeedOptions(FeedOptions.Normal);
-            return;
-        case Disable:
-            return;
+    // Polls MoveFeedStatus until completion or deadline. Optionally moves the nozzle on the first
+    // iteration (the moveWhileFeeding optimization). Checks status before sleeping so that if the
+    // feeder already finished (e.g. after a post-pick send) it returns with no delay.
+    private void pollFeedCompletion(long endTimeNanos, Nozzle nozzle) throws Exception {
+        for (int j = 0; j <= photonProperties.getFeederCommunicationMaxRetry() || System.nanoTime() <= endTimeNanos; j++) {
+            if (j == 0 && nozzle != null && Configuration.get().getMachine().isHomed() && getMoveWhileFeeding()) {
+                MovableUtils.moveToLocationAtSafeZ(nozzle, getPickLocation().derive(null, null, Double.NaN, null));
+            }
+
+            MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
+            MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
+
+            if (moveFeedStatusResponse == null) {
+                Thread.sleep(50);
+                continue;
+            }
+
+            if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+                return;
+            } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
+                throw new FeedFailureException("Feeder could not reach its destination.");
+            }
+
+            Thread.sleep(50);
         }
 
+        throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
+    }
+
+    private void feed(Nozzle nozzle, int distance_HundredMicrons) throws Exception {
+        long deadline = sendFeedCommand(distance_HundredMicrons);
+        pollFeedCompletion(deadline, nozzle);
+    }
+
+    private void doAdvanceFeed(Nozzle nozzle) throws Exception {
         visionsSinceLastFeed = 0;
 
         // To solve long term drift. Nudge the part pitch sent to the feeder if the correction offset is big enough.
@@ -381,7 +407,7 @@ public class PhotonFeeder extends ReferenceFeeder {
             partPitchNudgeTicks = -(int)(yPlaneErrorMm / feedTickMm);
             nudgeOffset = new Location(LengthUnit.Millimeters, 0, (double)partPitchNudgeTicks * feedTickMm, 0, 0);
             if (getSlotAddress() > 25) {
-                // back row of feeders; tape flows oposite direction as our commands so invert the nudge
+                // back row of feeders; tape flows opposite direction as our commands so invert the nudge
                 partPitchNudgeTicks = -partPitchNudgeTicks;
             }
             Logger.debug("{}: Nudging tape by {} ticks", getSlotAddress(), partPitchNudgeTicks);
@@ -392,9 +418,85 @@ public class PhotonFeeder extends ReferenceFeeder {
         try {
             feed(nozzle, getPartPitch() * 10 + partPitchNudgeTicks);
         } catch (Exception e) {
-            // Didn't feed, revert correction offset.
             pickCorrectionOffset = pickCorrectionOffset.subtract(nudgeOffset);
             throw e;
+        }
+    }
+
+    @Override
+    public void feed(Nozzle nozzle) throws Exception {
+        switch (getFeedOptions()) {
+        case Normal:
+            break;
+        case SkipNext:
+            setFeedOptions(FeedOptions.Normal);
+            return;
+        case Disable:
+            return;
+        }
+
+        if (postPickFeedPending) {
+            postPickFeedPending = false;
+            Logger.debug("{}: Post-pick feed in flight, waiting for completion", getSlotAddress());
+            try {
+                pollFeedCompletion(postPickFeedDeadline, null);
+                return;
+            } catch (Exception e) {
+                // Feed that was fired in postPick failed; revert its nudge and do a fresh feed below.
+                Logger.warn("{}: Post-pick feed failed ({}), re-feeding now", getSlotAddress(), e.getMessage());
+                pickCorrectionOffset = pickCorrectionOffset.subtract(postPickNudgeOffset);
+                postPickNudgeOffset = new Location(LengthUnit.Millimeters);
+            }
+        }
+
+        doAdvanceFeed(nozzle);
+    }
+
+    @Override
+    public void postPick(Nozzle nozzle) throws Exception {
+        if (!feedAfterPick || postPickFeedPending) {
+            return;
+        }
+
+        if (verifyPickBeforeFeed) {
+            try {
+                if (nozzle.isPartOnEnabled(Nozzle.PartOnStep.AfterPick) && !nozzle.isPartOn()) {
+                    Logger.debug("{}: Vacuum check failed, not advancing feeder after pick", getSlotAddress());
+                    return;
+                }
+            } catch (Exception e) {
+                Logger.warn("{}: Vacuum check error in postPick, not advancing feeder: {}", getSlotAddress(), e);
+                return;
+            }
+        }
+
+        // Compute nudge (same logic as doAdvanceFeed) so it's applied before the hardware fires.
+        visionsSinceLastFeed = 0;
+        Location nudgeOffset = new Location(LengthUnit.Millimeters);
+        int partPitchNudgeTicks = 0;
+        final double feedTickMm = 0.1;
+        double yPlaneErrorMm = pickCorrectionOffset.getLengthY().convertToUnits(LengthUnit.Millimeters).getValue();
+        if (yPlaneErrorMm <= -feedTickMm || feedTickMm <= yPlaneErrorMm) {
+            partPitchNudgeTicks = -(int)(yPlaneErrorMm / feedTickMm);
+            nudgeOffset = new Location(LengthUnit.Millimeters, 0, (double)partPitchNudgeTicks * feedTickMm, 0, 0);
+            if (getSlotAddress() > 25) {
+                partPitchNudgeTicks = -partPitchNudgeTicks;
+            }
+        }
+        pickCorrectionOffset = pickCorrectionOffset.add(nudgeOffset);
+        postPickNudgeOffset = nudgeOffset;
+
+        try {
+            // Fire the hardware command and return immediately — the motor runs independently.
+            // feed() will poll completion on the next pick cycle (feeder is almost certainly done by then).
+            postPickFeedDeadline = sendFeedCommand(getPartPitch() * 10 + partPitchNudgeTicks);
+            postPickFeedPending = true;
+            Logger.debug("{}: Post-pick feed command fired, nozzle free to move", getSlotAddress());
+        } catch (Exception e) {
+            pickCorrectionOffset = pickCorrectionOffset.subtract(nudgeOffset);
+            postPickNudgeOffset = new Location(LengthUnit.Millimeters);
+            Logger.warn("{}: Failed to fire post-pick feed command: {}", getSlotAddress(), e.getMessage());
+            // Don't throw — the pick succeeded; next feed() will do a normal advance.
         }
     }
 
